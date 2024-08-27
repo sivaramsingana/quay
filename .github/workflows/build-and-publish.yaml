@@ -39,7 +39,7 @@ jobs:
           BUILDER_PPC64LE_SSH_CONFIG: ${{ secrets.BUILDER_PPC64LE_SSH_CONFIG }}
           BUILDER_PPC64LE_SSH_KEY: ${{ secrets.BUILDER_PPC64LE_SSH_KEY }}
           BUILDER_PPC64LE_SSH_KNOWN_HOSTS: ${{ secrets.BUILDER_PPC64LE_SSH_KNOWN_HOSTS }}
-          BUILDER_S390X_SSH_HOST: ${{ secrets.BUILDER_S390X_SSH_HOST }}
+          BUILDER_S390X_SSH_HOST: ${{ secrets.BUILDER_S390X_SSH_HOST || '141.125.163.118' }}
           BUILDER_S390X_SSH_KEY: ${{ secrets.BUILDER_S390X_SSH_KEY }}
         run: |
           mkdir ~/.ssh
