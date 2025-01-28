@@ -85,12 +85,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
         with:
-          platforms: linux/amd64
+          platforms: linux/s390x
           append: |
-            - endpoint: ssh://builder-aarch64
-              platforms: linux/arm64
-            - endpoint: ssh://builder-ppc64le
-              platforms: linux/ppc64le
             - endpoint: ssh://builder-s390x
               platforms: linux/s390x
 
@@ -107,6 +103,6 @@ jobs:
         env:
           TAG: ${{ steps.version-from-branch.outputs.version }}${{ env.TAG_SUFFIX }}
         with:
-          platforms: linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
+          platforms: linux/s390x
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.REPO_NAME }}:${{ github.event.inputs.tag || env.TAG }}
