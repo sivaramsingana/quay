@@ -123,4 +123,4 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.REPO_NAME }}:${{ github.event.inputs.tag || env.TAG }}
       - name: Clean up
         run: |
-          ibmcloud is security-group-rule-delete ${{ secrets.SG_ID }} ${{steps.SGRID.outputs.RID}} -f
+          ibmcloud is security-group-rule-delete ${{ secrets.SG_ID }} ${{ steps.SGRID.outputs.RID }} -f
