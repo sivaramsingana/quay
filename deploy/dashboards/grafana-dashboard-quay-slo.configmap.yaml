@@ -197,24 +197,54 @@ data:
               },
               "expression": "",
               "hide": true,
-              "id": "",
-              "label": "",
-              "logGroups": [],
               "matchExact": true,
-              "metricEditorMode": 0,
-              "metricName": "HTTPCode_Target_2XX_Count",
-              "metricQueryType": 0,
+              "metricName": "HTTPCode_Target_5XX_Count",
               "namespace": "AWS/ApplicationELB",
               "period": "",
               "queryMode": "Metrics",
-              "refId": "B",
+              "refId": "errors",
               "region": "default",
-              "sql": {
-                "select": {
-                  "name": "AVG",
-                  "type": "function"
-                }
+              "sqlExpression": "",
+              "statistic": "Sum"
+            },
+            {
+              "datasource": {
+                "type": "cloudwatch",
+                "uid": "${cloudwatch_datasource}"
               },
+              "dimensions": {
+                "LoadBalancer": "app/quayio-production-alb01/dd2a8a128b2029c6"
+              },
+              "expression": "",
+              "hide": true,
+              "matchExact": true,
+              "metricName": "HTTPCode_ELB_5XX_Count",
+              "namespace": "AWS/ApplicationELB",
+              "period": "",
+              "queryMode": "Metrics",
+              "refId": "errors_elb",
+              "region": "default",
+              "sqlExpression": "",
+              "statistic": "Sum"
+            },
+            {
+              "datasource": {
+                "type": "cloudwatch",
+                "uid": "${cloudwatch_datasource}"
+              },
+              "dimensions": {
+                "LoadBalancer": "app/quayio-production-alb01/dd2a8a128b2029c6"
+              },
+              "expression": "",
+              "hide": true,
+              "matchExact": true,
+              "metricName": "RequestCount",
+              "namespace": "AWS/ApplicationELB",
+              "period": "",
+              "queryMode": "Metrics",
+              "refId": "total",
+              "region": "default",
+              "sqlExpression": "",
               "statistic": "Sum"
             },
             {
@@ -223,7 +253,7 @@ data:
                 "type": "__expr__",
                 "uid": "__expr__"
               },
-              "expression": "1 - ($A/$B)",
+              "expression": "1 - ($errors + $errors_elb)/$total",
               "hide": false,
               "refId": "Availability",
               "type": "math"
@@ -1252,7 +1282,7 @@ data:
                 "type": "__expr__",
                 "uid": "__expr__"
               },
-              "expression": "0.001 - (($errors+$errors_elb*$fraction_of_elb_traffic)/$total)",
+              "expression": "0.005 - (($errors+$errors_elb*$fraction_of_elb_traffic)/$total)",
               "hide": false,
               "refId": "Error budget left",
               "type": "math"

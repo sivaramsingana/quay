@@ -40,7 +40,11 @@ def _check_gunicorn(endpoint):
         client = app.config["HTTPCLIENT"]
         registry_url = _compute_internal_endpoint(app, endpoint)
         try:
-            status_code = client.get(registry_url, verify=False, timeout=2).status_code
+            status_code = client.get(
+                registry_url,
+                verify=False,
+                timeout=app.config.get("GUNICORN_HEALTH_CHECK_TIMEOUT", 2),
+            ).status_code
             okay = status_code == 200
             message = ("Got non-200 response for worker: %s" % status_code) if not okay else None
             return (okay, message)
@@ -78,6 +82,21 @@ def _check_storage(app):
     except Exception as ex:
         logger.exception("Storage check failed with exception %s", ex)
         return (False, "Storage check failed with exception %s" % ex)
+
+
+def _check_preferred_storage(app):
+    """
+    HEALTH_CHECKER_INSTANCE_CHECK_PREFERRED_STORAGE
+    """
+    if app.config.get("REGISTRY_STATE", "normal") == "readonly":
+        return (True, "Preferred storage check disabled for readonly mode")
+
+    try:
+        storage.validate([storage.preferred_locations[0]], app.config["HTTPCLIENT"])
+        return (True, None)
+    except Exception as ex:
+        logger.exception("Storage check failed with exception %s", ex)
+        return (False, "Preferred storage check failed with exception %s" % ex)
 
 
 def _check_auth(app):
@@ -183,6 +202,8 @@ def check_all_services(app, skip, for_instance=False):
     if for_instance:
         services = dict(_INSTANCE_SERVICES)
         services.update(_GLOBAL_SERVICES)
+        if app.config.get("HEALTH_CHECKER_INSTANCE_CHECK_PREFERRED_STORAGE"):
+            services["preferred_storage"] = _check_preferred_storage
     else:
         services = _GLOBAL_SERVICES
 
