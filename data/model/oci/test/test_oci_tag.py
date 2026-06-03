@@ -1256,10 +1256,6 @@ class TestRetargetTagRaceCondition:
         repo = model.repository.create_repository("devtable", "newrepo", None)
         manifest, _ = create_manifest_for_testing(repo, "reponotfound1")
 
-        # Delete the repository to simulate it being removed between manifest
-        # lookup and repository lookup inside retarget_tag.
-        # Temporarily disable FK constraints so we can remove the repo while
-        # the manifest row still exists (mimicking a race condition).
         _force_delete_repository(repo.id)
 
         result = retarget_tag("failingtag", manifest.id, raise_on_error=False)
@@ -1272,10 +1268,6 @@ class TestRetargetTagRaceCondition:
         repo = model.repository.create_repository("devtable", "newrepo", None)
         manifest, _ = create_manifest_for_testing(repo, "reponotfound2")
 
-        # Delete the repository to simulate it being removed between manifest
-        # lookup and repository lookup inside retarget_tag.
-        # Temporarily disable FK constraints so we can remove the repo while
-        # the manifest row still exists (mimicking a race condition).
         _force_delete_repository(repo.id)
 
         with pytest.raises(RetargetTagException) as exc_info:

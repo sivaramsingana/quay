@@ -135,7 +135,7 @@ test.describe('Usage Logs', {tag: ['@logs']}, () => {
     // Mock logs API to return an org_mirror_sync_failed log with stderr
     await authenticatedPage.route(
       `**/api/v1/organization/${org.name}/logs*`,
-      async (route) => {
+      async (route): Promise<void> => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -160,7 +160,7 @@ test.describe('Usage Logs', {tag: ['@logs']}, () => {
     );
     await authenticatedPage.route(
       `**/api/v1/organization/${org.name}/aggregatelogs*`,
-      async (route) => {
+      async (route): Promise<void> => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -180,6 +180,121 @@ test.describe('Usage Logs', {tag: ['@logs']}, () => {
       table.getByText(/skopeo: authentication required/),
     ).toBeVisible();
   });
+
+  test.describe(
+    'repo mirror sync log rendering',
+    {tag: ['@feature:REPO_MIRROR']},
+    () => {
+      test('successful mirror sync logs render without undefined or null', async ({
+        authenticatedPage,
+        api,
+      }) => {
+        test.setTimeout(180_000);
+        const org = await api.organization('logsyncok');
+        const repo = await api.repository(org.name, 'logsyncokr');
+        const robot = await api.robot(org.name, 'logsyncokbot');
+        await api.setMirrorState(org.name, repo.name);
+
+        const syncStartDate = new Date();
+        syncStartDate.setMinutes(syncStartDate.getMinutes() + 5);
+        await api.raw.createMirrorConfig(org.name, repo.name, {
+          external_reference: 'quay.io/quay/busybox',
+          sync_interval: 86400,
+          sync_start_date: syncStartDate
+            .toISOString()
+            .replace(/\.\d{3}Z$/, 'Z'),
+          root_rule: {rule_kind: 'tag_glob_csv', rule_value: ['latest']},
+          robot_username: robot.fullName,
+          skopeo_timeout_interval: 300,
+          is_enabled: true,
+          verify_tls: true,
+        });
+
+        await api.raw.triggerMirrorSync(org.name, repo.name);
+
+        await expect
+          .poll(
+            async () => {
+              const cfg = await api.raw.getMirrorConfig(org.name, repo.name);
+              const status = cfg?.sync_status ?? 'UNKNOWN';
+              if (status === 'FAIL') {
+                throw new Error('Mirror sync failed unexpectedly');
+              }
+              return status;
+            },
+            {timeout: 120_000, intervals: [5_000, 10_000, 15_000]},
+          )
+          .toBe('SUCCESS');
+
+        await authenticatedPage.goto(
+          `/repository/${org.name}/${repo.name}?tab=logs`,
+        );
+        const table = authenticatedPage.getByTestId('usage-logs-table');
+        await expect(table).toBeVisible();
+
+        await expect(
+          table.getByText(/Mirror finished successfully/),
+        ).toBeVisible();
+        await expect(
+          table.getByText(/Mirror of latest successful/),
+        ).toBeVisible();
+
+        await expect(table.getByText(/undefined/)).not.toBeAttached();
+        await expect(table.getByText(/\bnull\b/)).not.toBeAttached();
+      });
+
+      test('failed mirror sync logs render without undefined or null', async ({
+        authenticatedPage,
+        api,
+      }) => {
+        test.setTimeout(180_000);
+        const org = await api.organization('logsyncfail');
+        const repo = await api.repository(org.name, 'logsyncfailr');
+        const robot = await api.robot(org.name, 'logsyncfailbot');
+        await api.setMirrorState(org.name, repo.name);
+
+        const syncStartDate = new Date();
+        syncStartDate.setMinutes(syncStartDate.getMinutes() + 5);
+        await api.raw.createMirrorConfig(org.name, repo.name, {
+          external_reference: 'nonexistent.invalid/nope',
+          sync_interval: 86400,
+          sync_start_date: syncStartDate
+            .toISOString()
+            .replace(/\.\d{3}Z$/, 'Z'),
+          root_rule: {rule_kind: 'tag_glob_csv', rule_value: ['latest']},
+          robot_username: robot.fullName,
+          skopeo_timeout_interval: 300,
+          is_enabled: true,
+          verify_tls: false,
+        });
+
+        await api.raw.triggerMirrorSync(org.name, repo.name);
+
+        await expect
+          .poll(
+            async () => {
+              const cfg = await api.raw.getMirrorConfig(org.name, repo.name);
+              return cfg?.sync_status ?? 'UNKNOWN';
+            },
+            {timeout: 120_000, intervals: [5_000, 10_000, 15_000]},
+          )
+          .toBe('FAIL');
+
+        await authenticatedPage.goto(
+          `/repository/${org.name}/${repo.name}?tab=logs`,
+        );
+        const table = authenticatedPage.getByTestId('usage-logs-table');
+        await expect(table).toBeVisible();
+
+        await expect(
+          table.getByText(/Mirror finished unsuccessfully/),
+        ).toBeVisible();
+
+        await expect(table.getByText(/undefined/)).not.toBeAttached();
+        await expect(table.getByText(/\bnull\b/)).not.toBeAttached();
+      });
+    },
+  );
 
   test.describe('chart log kind mapping', {tag: ['@PROJQUAY-11079']}, () => {
     test(
@@ -283,6 +398,66 @@ test.describe('Usage Logs', {tag: ['@logs']}, () => {
     );
   });
 
+  test(
+    'chart legend renders in scrollable container below chart SVG',
+    {tag: ['@PROJQUAY-11577']},
+    async ({authenticatedPage, api}) => {
+      const org = await api.organization('legendlayout');
+      const today = new Date().toISOString().slice(0, 10) + 'T12:00:00Z';
+
+      await authenticatedPage.route(
+        `**/api/v1/organization/${org.name}/logs*`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({logs: [], is_truncated: false}),
+          });
+        },
+      );
+
+      await authenticatedPage.route(
+        `**/api/v1/organization/${org.name}/aggregatelogs*`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              aggregated: [
+                {kind: 'create_repo', count: 3, datetime: today},
+                {kind: 'delete_repo', count: 1, datetime: today},
+                {kind: 'create_robot', count: 2, datetime: today},
+              ],
+            }),
+          });
+        },
+      );
+
+      await authenticatedPage.goto(`/organization/${org.name}?tab=Logs`);
+
+      const chart = authenticatedPage.getByTestId('usage-logs-chart');
+      await expect(chart).toBeVisible();
+
+      // Legend must be in the dedicated scrollable container, not inside the SVG
+      const legendContainer = chart.locator('.usage-logs-legend-container');
+      await expect(legendContainer).toBeVisible();
+
+      // Verify legend items from the mocked data appear inside the container
+      await expect(
+        legendContainer.getByText('Create Repository'),
+      ).toBeVisible();
+      await expect(
+        legendContainer.getByText('Delete repository'),
+      ).toBeVisible();
+      await expect(
+        legendContainer.getByText('Create Robot Account'),
+      ).toBeVisible();
+
+      // The chart SVG must still be present at full height
+      await expect(chart.locator('svg').first()).toBeVisible();
+    },
+  );
+
   test('shows info alert when Splunk search is not configured', async ({
     authenticatedPage,
     api,
@@ -292,7 +467,7 @@ test.describe('Usage Logs', {tag: ['@logs']}, () => {
     // Mock 200 response with search_unavailable flag
     await authenticatedPage.route(
       '**/api/v1/organization/*/logs*',
-      async (route) => {
+      async (route): Promise<void> => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -307,7 +482,7 @@ test.describe('Usage Logs', {tag: ['@logs']}, () => {
     );
     await authenticatedPage.route(
       '**/api/v1/organization/*/aggregatelogs*',
-      async (route) => {
+      async (route): Promise<void> => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -338,7 +513,8 @@ test.describe(
   {tag: ['@logs', '@PROJQUAY-10605']},
   () => {
     // Escape special regex characters in generated names (e.g. dots, plus signs)
-    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapeRegex = (s: string): string =>
+      s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     test(
       'superuser view shows only repo name in Repository column (not namespace/repo)',

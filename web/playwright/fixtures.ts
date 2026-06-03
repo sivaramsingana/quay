@@ -29,9 +29,10 @@ import {
 } from '@playwright/test';
 import {uniqueName} from './utils/test-utils';
 import {TEST_USERS, TEST_USERS_OIDC, TEST_USERS_LDAP} from './global-setup';
-import {API_URL} from './utils/config';
+import {API_URL, BASE_URL} from './utils/config';
 import {
   ApiClient,
+  AutoPrunePolicy,
   PrototypeRole,
   RawApiClient,
   RepositoryVisibility,
@@ -81,6 +82,7 @@ export interface CreatedRobot {
   orgName: string;
   shortname: string;
   fullName: string;
+  token: string;
 }
 
 /**
@@ -327,7 +329,11 @@ export class TestApi {
     // Robot names can't have dashes, only underscores
     const shortname = uniqueName(namePrefix).replace(/-/g, '_');
 
-    await this.client.createRobot(orgName, shortname, description);
+    const result = await this.client.createRobot(
+      orgName,
+      shortname,
+      description,
+    );
 
     this.cleanupStack.push(async () => {
       try {
@@ -341,6 +347,7 @@ export class TestApi {
       orgName,
       shortname,
       fullName: `${orgName}+${shortname}`,
+      token: result.token,
     };
   }
 
@@ -627,11 +634,13 @@ export class TestApi {
     namespace: string,
     repoName: string,
     dockerfileContent = 'FROM scratch\n',
+    dockerTags: string[] = [],
   ): Promise<CreatedBuild> {
     const result = await this.client.startDockerfileBuild(
       namespace,
       repoName,
       dockerfileContent,
+      dockerTags,
     );
 
     // No cleanup needed - builds are deleted when the repository is deleted
@@ -721,6 +730,75 @@ export class TestApi {
   }
 
   /**
+   * Create an auto-prune policy for an organization.
+   * Automatically deleted after test.
+   */
+  async orgAutoPrunePolicy(
+    orgName: string,
+    policy: AutoPrunePolicy,
+  ): Promise<{uuid: string; orgName: string}> {
+    const result = await this.client.createOrgAutoPrunePolicy(orgName, policy);
+
+    this.cleanupStack.push(async () => {
+      try {
+        await this.client.deleteOrgAutoPrunePolicy(orgName, result.uuid);
+      } catch {
+        /* ignore cleanup errors */
+      }
+    });
+
+    return {uuid: result.uuid, orgName};
+  }
+
+  /**
+   * Create an auto-prune policy for a repository.
+   * Automatically deleted after test.
+   */
+  async repoAutoPrunePolicy(
+    namespace: string,
+    repoName: string,
+    policy: AutoPrunePolicy,
+  ): Promise<{uuid: string; namespace: string; repoName: string}> {
+    const result = await this.client.createRepoAutoPrunePolicy(
+      namespace,
+      repoName,
+      policy,
+    );
+
+    this.cleanupStack.push(async () => {
+      try {
+        await this.client.deleteRepoAutoPrunePolicy(
+          namespace,
+          repoName,
+          result.uuid,
+        );
+      } catch {
+        /* ignore cleanup errors */
+      }
+    });
+
+    return {uuid: result.uuid, namespace, repoName};
+  }
+
+  /**
+   * Create an auto-prune policy for the current user.
+   * Automatically deleted after test.
+   */
+  async userAutoPrunePolicy(policy: AutoPrunePolicy): Promise<{uuid: string}> {
+    const result = await this.client.createUserAutoPrunePolicy(policy);
+
+    this.cleanupStack.push(async () => {
+      try {
+        await this.client.deleteUserAutoPrunePolicy(result.uuid);
+      } catch {
+        /* ignore cleanup errors */
+      }
+    });
+
+    return {uuid: result.uuid};
+  }
+
+  /**
    * Create an OAuth application in an organization.
    * Automatically deleted after test.
    */
@@ -787,7 +865,9 @@ export type QuayFeature =
   | 'SPARSE_INDEX'
   | 'TEAM_SYNCING'
   | 'DIRECT_LOGIN'
-  | 'NONSUPERUSER_TEAM_SYNCING_SETUP';
+  | 'NONSUPERUSER_TEAM_SYNCING_SETUP'
+  | 'BUILD_SUPPORT'
+  | 'STORAGE_REPLICATION';
 
 /**
  * Quay configuration from /config endpoint
@@ -870,6 +950,13 @@ function getTestUsers(config?: QuayConfig | null) {
   if (authType === 'OIDC') return TEST_USERS_OIDC;
   if (authType === 'LDAP') return TEST_USERS_LDAP;
   return TEST_USERS;
+}
+
+async function setReactUICookie(context: BrowserContext): Promise<void> {
+  const domain = new URL(BASE_URL).hostname;
+  await context.addCookies([
+    {name: 'defaultui', value: 'react', domain, path: '/'},
+  ]);
 }
 
 /**
@@ -996,6 +1083,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   userContext: [
     async ({browser, cachedQuayConfig}, use) => {
       const context = await browser.newContext();
+      await setReactUICookie(context);
       const users = getTestUsers(cachedQuayConfig);
       await loginUser(
         context,
@@ -1012,6 +1100,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   superuserContext: [
     async ({browser, cachedQuayConfig}, use) => {
       const context = await browser.newContext();
+      await setReactUICookie(context);
       const users = getTestUsers(cachedQuayConfig);
       await loginUser(
         context,
@@ -1028,6 +1117,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   readonlyContext: [
     async ({browser, cachedQuayConfig}, use) => {
       const context = await browser.newContext();
+      await setReactUICookie(context);
       const users = getTestUsers(cachedQuayConfig);
       await loginUser(
         context,
@@ -1300,3 +1390,10 @@ export {uniqueName} from './utils/test-utils';
 
 export {mailpit} from './utils/mailpit';
 export type {MailpitMessage, MailpitMessagesResponse} from './utils/mailpit';
+
+// ============================================================================
+// Webhook: Re-export from utils
+// ============================================================================
+
+export {WebhookReceiver} from './utils/webhook';
+export type {WebhookRequest} from './utils/webhook';

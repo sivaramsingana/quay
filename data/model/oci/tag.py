@@ -471,13 +471,16 @@ def retarget_tag(
         db_advisory_xact_lock(lock_id)
 
         try:
-            repo = Repository.select().where(Repository.id == manifest.repository_id).get()
+            repo = (
+                Repository.select(Repository.namespace_user)
+                .where(Repository.id == manifest.repository_id)
+                .get()
+            )
         except Repository.DoesNotExist:
             if raise_on_error:
                 raise RetargetTagException("Repository no longer exists")
             return None
 
-        # Now safe to read/modify tags - we hold the advisory lock
         existing_tag = get_tag(manifest.repository_id, tag_name)
         if existing_tag is not None:
             if features.IMMUTABLE_TAGS and existing_tag.immutable:
