@@ -124,22 +124,23 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.REPO_NAME }}:${{ github.event.inputs.tag || env.TAG }}-amd64-ppc64le-s390x
 
-      cleanup-sg-rule:
-        name: Remove VPC SSH rule
-        needs: build-amd64-ppc64le-s390x
-        if: always() && needs.build-amd64-ppc64le-s390x.outputs.sg_rule_id !=
-        runs-on: ubuntu-latest
-        steps:
-          - name: Install ibmcli and login
-            run: |
-              curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
-              ibmcloud login -q --apikey ${{ secrets.IBMCLOUD_API_KEY }} -r e
-              ibmcloud plugin install vpc-infrastructure
-          - name: Delete VPC security group rule
-            run: |
-              ibmcloud is security-group-rule-delete \
-              ${{ secrets.SG_ID }} \
-              ${{ needs.build-amd64-ppc64le-s390x.outputs.sg_rule_id }} -f
+  cleanup-sg-rule:
+    name: Remove VPC SSH rule
+    needs: build-amd64-ppc64le-s390x
+    if: always() && needs.build-amd64-ppc64le-s390x.outputs.sg_rule_id != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install ibmcli and login
+        run: |
+          curl -fsSL https://clis.cloud.ibm.com/install/linux | sh
+          ibmcloud login -q --apikey ${{ secrets.IBMCLOUD_API_KEY }} -r eu-gb
+          ibmcloud plugin install vpc-infrastructure
+
+      - name: Delete VPC security group rule
+        run: |
+          ibmcloud is security-group-rule-delete \
+            ${{ secrets.SG_ID }} \
+            ${{ needs.build-amd64-ppc64le-s390x.outputs.sg_rule_id }} -f
 
   build-arm64:
     name: Build ARM64 image
